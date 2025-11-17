@@ -1,0 +1,50 @@
+name: create png file
+
+on:
+  # GAS から叩く用のトリガー
+  repository_dispatch:
+    types: [create-png-file]
+
+  # 手動テスト用（GitHub の Actions 画面から実行できる）
+  workflow_dispatch:
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'   # 必要なら 3.10 などに変更してOK
+
+      - name: Install system dependencies (poppler)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y poppler-utils
+
+      - name: Set up Google credentials
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GOOGLE_CREDENTIALS }}
+        run: |
+          # Secrets に入れておいた JSON をファイルに書き出す
+          echo "$GOOGLE_CREDENTIALS" > credentials.json
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run PDF to PNG converter
+        env:
+          # ★テスト用に固定値を入れる（あとでGAS連携用に戻す）
+          INPUT_FOLDER_ID: "1MQ66rEo_N5FtZg0AXR409H1yAW5RUClI"
+          OUTPUT_FOLDER_ID: "1UNWio1YrDi1YTctUEhtZdaVdUqsbLG3M"
+          V_WIDTH: 3508"
+          H_WIDTH: "2480"
+          RESIZE_FLG: "false"
+        run: |
+          python create_png_file.py
