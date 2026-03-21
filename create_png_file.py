@@ -8,6 +8,7 @@ import requests
 import cv2
 import numpy as np
 from PIL import Image
+import fitz
 from pdf2image import convert_from_path
 
 from google.oauth2.service_account import Credentials
@@ -140,6 +141,7 @@ class QPngCreator:
 
         # dpi設定
         self.dpi = 350
+        self.render_engine = os.environ.get("RENDER_ENGINE", "pymupdf").lower()
 
         # 出力横幅の設定（縦長用・横長用）
         self.V_WIDTH = v_width
@@ -167,38 +169,85 @@ class QPngCreator:
         img = cv2.imdecode(n, flags)
         return img
 
-    def _create_png(self):
+    def _prepare_temp_dir(self):
         """
-        PDF（self.pdf_path）をページごとのPNGに分解して
-        一時フォルダ（TEMP_PATH）に保存する。
+        一時フォルダを作り直す。
         """
-        # 一時フォルダを作り直す
         if os.path.isdir(self.TEMP_PATH):
             shutil.rmtree(self.TEMP_PATH)
         os.makedirs(self.TEMP_PATH, exist_ok=True)
 
-        # PDF → 各ページの画像（Pillow Image のリスト）
-        pages = convert_from_path(self.pdf_path, dpi=self.dpi, fmt="png", thread_count=4)
+    def _crop_if_needed(self, filepath):
+        """
+        余白カットが有効な場合のみ、生成済みPNGをクロップする。
+        """
+        if not self.resize_flg:
+            return
 
+        page = Image.open(filepath)
+        width, height = page.size
+
+        left = 250
+        top = 350
+        right = width - 250
+        bottom = height - 350
+
+        if left >= right or top >= bottom:
+            return
+
+        page_crop = page.crop((left, top, right, bottom))
+        page_crop.save(filepath)
+
+    def _create_png(self):
+        """
+        PDF（self.pdf_path）をページごとのPNGに分解して
+        一時フォルダ（TEMP_PATH）に保存する。
+        デフォルトでは PyMuPDF でレンダリングし、失敗時は pdf2image にフォールバックする。
+        """
+        self._prepare_temp_dir()
         self.png_list = []
-        for i, page in enumerate(pages):
-            filepath = os.path.join(self.TEMP_PATH, f"_{i+1:02d}.png")
-            self.png_list.append(filepath)
-            page.save(filepath, "PNG")
 
-            # 余白をカットするモードの場合
-            if self.resize_flg:
-                page = Image.open(filepath)
-                width, height = page.size
+        if self.render_engine not in {"pymupdf", "pdf2image"}:
+            print(f"Unknown RENDER_ENGINE={self.render_engine}. Fallback to pymupdf.")
+            self.render_engine = "pymupdf"
 
-                # ここは元コードのクロップ範囲を踏襲
-                left = 250
-                top = 350
-                right = width - 250
-                bottom = height - 350
+        try:
+            if self.render_engine == "pymupdf":
+                doc = fitz.open(self.pdf_path)
+                try:
+                    for i, page in enumerate(doc):
+                        filepath = os.path.join(self.TEMP_PATH, f"_{i+1:02d}.png")
+                        self.png_list.append(filepath)
 
-                page_crop = page.crop((left, top, right, bottom))
-                page_crop.save(filepath)
+                        pix = page.get_pixmap(dpi=self.dpi, alpha=False)
+                        pix.save(filepath)
+                        self._crop_if_needed(filepath)
+                finally:
+                    doc.close()
+            else:
+                pages = convert_from_path(self.pdf_path, dpi=self.dpi, fmt="png", thread_count=1)
+
+                for i, page in enumerate(pages):
+                    filepath = os.path.join(self.TEMP_PATH, f"_{i+1:02d}.png")
+                    self.png_list.append(filepath)
+                    page.save(filepath, "PNG")
+                    self._crop_if_needed(filepath)
+
+        except Exception as e:
+            if self.render_engine == "pymupdf":
+                print(f"PyMuPDF render failed on {os.path.basename(self.pdf_path)}: {e}")
+                print("Fallback to pdf2image.")
+                self._prepare_temp_dir()
+                self.png_list = []
+
+                pages = convert_from_path(self.pdf_path, dpi=self.dpi, fmt="png", thread_count=1)
+                for i, page in enumerate(pages):
+                    filepath = os.path.join(self.TEMP_PATH, f"_{i+1:02d}.png")
+                    self.png_list.append(filepath)
+                    page.save(filepath, "PNG")
+                    self._crop_if_needed(filepath)
+            else:
+                raise
 
         self.png_list = sorted(self.png_list)
         return self.png_list
@@ -357,6 +406,8 @@ def main():
     h_width = int(os.environ.get("H_WIDTH", "1000"))
     resize_flg_str = os.environ.get("RESIZE_FLG", "false").lower()
     resize_flg = resize_flg_str == "true"
+    render_engine = os.environ.get("RENDER_ENGINE", "pymupdf")
+    print(f"RENDER_ENGINE={render_engine}")
 
     # ローカルの作業用フォルダ
     work_dir = "./work"
