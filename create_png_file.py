@@ -16,6 +16,30 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
 
 
+def get_env_int(name, default):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+
+    value = value.strip()
+    if value == "":
+        return default
+
+    return int(value)
+
+
+def get_env_bool(name, default=False):
+    value = os.environ.get(name)
+    if value is None:
+        return default
+
+    value = value.strip().lower()
+    if value == "":
+        return default
+
+    return value == "true"
+
+
 # ================================
 # Google Drive API 関連の関数
 # ================================
@@ -401,11 +425,10 @@ def main():
     input_folder_id = os.environ["INPUT_FOLDER_ID"]    # PDFが入っているDriveフォルダID
     output_folder_id = os.environ["OUTPUT_FOLDER_ID"]  # PNGを保存したいDriveフォルダID
 
-    # V_WIDTH / H_WIDTH / RESIZE_FLG は、渡されなければデフォルト値を使う
-    v_width = int(os.environ.get("V_WIDTH", "640"))
-    h_width = int(os.environ.get("H_WIDTH", "1000"))
-    resize_flg_str = os.environ.get("RESIZE_FLG", "false").lower()
-    resize_flg = resize_flg_str == "true"
+    # V_WIDTH / H_WIDTH / RESIZE_FLG は、未設定や空文字ならデフォルト値を使う
+    v_width = get_env_int("V_WIDTH", 640)
+    h_width = get_env_int("H_WIDTH", 1000)
+    resize_flg = get_env_bool("RESIZE_FLG", False)
     render_engine = os.environ.get("RENDER_ENGINE", "pymupdf")
     print(f"RENDER_ENGINE={render_engine}")
 
