@@ -40,6 +40,7 @@ jobs:
 
       - name: Run PDF to PNG converter and upload via GAS
         env:
+          PYTHONUNBUFFERED: "1"
           # GAS から repository_dispatch の client_payload で渡す
           INPUT_FOLDER_ID: ${{ github.event.client_payload.input_folder_id }}
           OUTPUT_FOLDER_ID: ${{ github.event.client_payload.output_folder_id }}
@@ -49,4 +50,4 @@ jobs:
           GAS_UPLOAD_URL: ${{ secrets.GAS_UPLOAD_URL }}          # GAS Web API のURL
           PNG_FILE_UPLOAD_TOKEN: ${{ secrets.PNG_FILE_UPLOAD_TOKEN }} # 簡単な認証用トークン(手動作成)
         run: |
-          python create_png_file.py
+          python -u create_png_file.py

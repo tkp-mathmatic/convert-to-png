@@ -1,5 +1,6 @@
 import os
 import io
+import sys
 import datetime
 import shutil
 import base64
@@ -17,6 +18,12 @@ from pdf2image import convert_from_path
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload
+
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(line_buffering=True)
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(line_buffering=True)
 
 
 def get_env_int(name, default):
@@ -72,11 +79,23 @@ def list_pdfs_in_folder(service, folder_id):
         "and mimeType='application/pdf' "
         "and trashed = false"
     )
-    results = service.files().list(
-        q=query,
-        fields="files(id, name)"
-    ).execute()
-    return results.get("files", [])
+    files = []
+    page_token = None
+
+    while True:
+        results = service.files().list(
+            q=query,
+            fields="nextPageToken, files(id, name)",
+            pageSize=100,
+            pageToken=page_token
+        ).execute()
+        files.extend(results.get("files", []))
+
+        page_token = results.get("nextPageToken")
+        if not page_token:
+            break
+
+    return files
 
 
 def download_pdf(service, file_id, dest_path):
@@ -186,6 +205,9 @@ class QPngCreator:
         line = f"{now_str},{target},{message}\n"
         with open(self.logpath, mode="a", encoding="utf-8") as f:
             f.write(line)
+            f.flush()
+
+        print(f"LOG,{line.rstrip()}")
 
     def _cv2_read(self, filename, flags=cv2.IMREAD_COLOR, dtype=np.uint8):
         """
