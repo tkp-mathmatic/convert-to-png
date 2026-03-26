@@ -8,7 +8,10 @@ import requests
 import cv2
 import numpy as np
 from PIL import Image
-import fitz
+try:
+    import fitz
+except ModuleNotFoundError:
+    fitz = None
 from pdf2image import convert_from_path
 
 from google.oauth2.service_account import Credentials
@@ -234,6 +237,10 @@ class QPngCreator:
         if self.render_engine not in {"pymupdf", "pdf2image"}:
             print(f"Unknown RENDER_ENGINE={self.render_engine}. Fallback to pymupdf.")
             self.render_engine = "pymupdf"
+
+        if self.render_engine == "pymupdf" and fitz is None:
+            print("PyMuPDF is not installed. Fallback to pdf2image.")
+            self.render_engine = "pdf2image"
 
         try:
             if self.render_engine == "pymupdf":
