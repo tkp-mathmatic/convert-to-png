@@ -50,6 +50,19 @@ def get_env_bool(name, default=False):
     return value == "true"
 
 
+def list_local_pdfs(input_dir):
+    if not os.path.isdir(input_dir):
+        return []
+
+    pdf_files = []
+    for file_name in os.listdir(input_dir):
+        file_path = os.path.join(input_dir, file_name)
+        if os.path.isfile(file_path) and file_name.lower().endswith(".pdf"):
+            pdf_files.append(file_name)
+
+    return sorted(pdf_files)
+
+
 # ================================
 # Google Drive API 関連の関数
 # ================================
@@ -450,16 +463,61 @@ def main():
     を一括で行う。
     """
 
-    # ----- 環境変数から値を取得（GAS → GitHub Actions から渡される想定） -----
-    input_folder_id = os.environ["INPUT_FOLDER_ID"]    # PDFが入っているDriveフォルダID
-    output_folder_id = os.environ["OUTPUT_FOLDER_ID"]  # PNGを保存したいDriveフォルダID
-
     # V_WIDTH / H_WIDTH / RESIZE_FLG は、未設定や空文字ならデフォルト値を使う
     v_width = get_env_int("V_WIDTH", 640)
     h_width = get_env_int("H_WIDTH", 1000)
     resize_flg = get_env_bool("RESIZE_FLG", False)
     render_engine = os.environ.get("RENDER_ENGINE", "pymupdf")
     print(f"RENDER_ENGINE={render_engine}")
+
+    local_mode = get_env_bool("LOCAL_MODE", False)
+    if not local_mode:
+        local_mode = "INPUT_FOLDER_ID" not in os.environ and "OUTPUT_FOLDER_ID" not in os.environ
+
+    if local_mode:
+        input_dir = os.environ.get("LOCAL_INPUT_DIR", "./input")
+        output_dir = os.environ.get("LOCAL_OUTPUT_DIR", "./output")
+        log_path = os.path.join(output_dir, "log.csv")
+
+        os.makedirs(input_dir, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
+
+        pdf_files = list_local_pdfs(input_dir)
+        print(f"Local mode: input={input_dir}, output={output_dir}")
+        print(f"Found {len(pdf_files)} pdf files in local input folder")
+
+        if not pdf_files:
+            print("No PDF files found. Put PDF files into the input folder and rerun.")
+            return
+
+        qpc = QPngCreator(
+            resize_flg=resize_flg,
+            output_path=output_dir,
+            v_width=v_width,
+            h_width=h_width,
+            logpath=log_path
+        )
+
+        total_count = len(pdf_files)
+        for index, pdf_name in enumerate(pdf_files, start=1):
+            base_name, _ = os.path.splitext(pdf_name)
+            local_pdf_path = os.path.join(input_dir, pdf_name)
+            local_png_path = os.path.join(output_dir, f"{base_name}.png")
+
+            print(f"[{index}/{total_count}] Processing: {pdf_name}")
+            success = qpc.execute(pdf_path=local_pdf_path)
+            if not success:
+                print(f"[{index}/{total_count}] Failed to convert: {pdf_name}")
+                continue
+
+            print(f"[{index}/{total_count}] Created PNG: {local_png_path}")
+
+        print(f"Local conversion finished. Output folder: {output_dir}")
+        return
+
+    # ----- 環境変数から値を取得（GAS → GitHub Actions から渡される想定） -----
+    input_folder_id = os.environ["INPUT_FOLDER_ID"]    # PDFが入っているDriveフォルダID
+    output_folder_id = os.environ["OUTPUT_FOLDER_ID"]  # PNGを保存したいDriveフォルダID
 
     # ローカルの作業用フォルダ
     work_dir = "./work"
